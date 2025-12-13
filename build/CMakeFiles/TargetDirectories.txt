@@ -1,0 +1,3 @@
+/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/zoom.dir
+/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/edit_cache.dir
+/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/rebuild_cache.dir
