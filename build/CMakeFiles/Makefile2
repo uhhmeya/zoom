@@ -63,11 +63,13 @@ CMAKE_BINARY_DIR = /Users/ameyamandhare/Desktop/school/zoom/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/zoom.dir/all
+all: CMakeFiles/server.dir/all
+all: CMakeFiles/client.dir/all
 .PHONY : all
 
 # The main recursive "codegen" target.
-codegen: CMakeFiles/zoom.dir/codegen
+codegen: CMakeFiles/server.dir/codegen
+codegen: CMakeFiles/client.dir/codegen
 .PHONY : codegen
 
 # The main recursive "preinstall" target.
@@ -75,40 +77,73 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/zoom.dir/clean
+clean: CMakeFiles/server.dir/clean
+clean: CMakeFiles/client.dir/clean
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/zoom.dir
+# Target rules for target CMakeFiles/server.dir
 
 # All Build rule for target.
-CMakeFiles/zoom.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/zoom.dir/build.make CMakeFiles/zoom.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/zoom.dir/build.make CMakeFiles/zoom.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=1,2 "Built target zoom"
-.PHONY : CMakeFiles/zoom.dir/all
+CMakeFiles/server.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=3,4,5 "Built target server"
+.PHONY : CMakeFiles/server.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/zoom.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles 2
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/zoom.dir/all
+CMakeFiles/server.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles 3
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/server.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles 0
-.PHONY : CMakeFiles/zoom.dir/rule
+.PHONY : CMakeFiles/server.dir/rule
 
 # Convenience name for target.
-zoom: CMakeFiles/zoom.dir/rule
-.PHONY : zoom
+server: CMakeFiles/server.dir/rule
+.PHONY : server
 
 # codegen rule for target.
-CMakeFiles/zoom.dir/codegen:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/zoom.dir/build.make CMakeFiles/zoom.dir/codegen
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=1,2 "Finished codegen for target zoom"
-.PHONY : CMakeFiles/zoom.dir/codegen
+CMakeFiles/server.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=3,4,5 "Finished codegen for target server"
+.PHONY : CMakeFiles/server.dir/codegen
 
 # clean rule for target.
-CMakeFiles/zoom.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/zoom.dir/build.make CMakeFiles/zoom.dir/clean
-.PHONY : CMakeFiles/zoom.dir/clean
+CMakeFiles/server.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/clean
+.PHONY : CMakeFiles/server.dir/clean
+
+#=============================================================================
+# Target rules for target CMakeFiles/client.dir
+
+# All Build rule for target.
+CMakeFiles/client.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=1,2 "Built target client"
+.PHONY : CMakeFiles/client.dir/all
+
+# Build rule for subdir invocation for target.
+CMakeFiles/client.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles 2
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/client.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles 0
+.PHONY : CMakeFiles/client.dir/rule
+
+# Convenience name for target.
+client: CMakeFiles/client.dir/rule
+.PHONY : client
+
+# codegen rule for target.
+CMakeFiles/client.dir/codegen:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/codegen
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles --progress-num=1,2 "Finished codegen for target client"
+.PHONY : CMakeFiles/client.dir/codegen
+
+# clean rule for target.
+CMakeFiles/client.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/client.dir/build.make CMakeFiles/client.dir/clean
+.PHONY : CMakeFiles/client.dir/clean
 
 #=============================================================================
 # Special targets to cleanup operation of make.
