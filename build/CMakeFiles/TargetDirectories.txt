@@ -1,4 +1,4 @@
 /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/server.dir
-/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/client.dir
+/Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/test.dir
 /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/edit_cache.dir
 /Users/ameyamandhare/Desktop/school/zoom/build/CMakeFiles/rebuild_cache.dir

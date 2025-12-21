@@ -16,7 +16,7 @@ int make_client() {
     server.sin_family = AF_INET;
     server.sin_port = htons(8080);
     server.sin_addr.s_addr = inet_addr("127.0.0.1");
-    if (connect(sock, reinterpret_cast<struct sockaddr *>(&server), sizeof(server)) < 0) {
+    if (connect(sock, reinterpret_cast<sockaddr *>(&server), sizeof(server)) < 0) {
         std::cerr << "Connection failed\n";
         close(sock);
         return -1;
@@ -57,21 +57,25 @@ void worker(const int num_requests, const double rate_per_second) {
 
 
 
-void run_test(const int rate, const double duration, const double num_threads) {
+void run_test(const int rate, const double duration, const int num_threads) {
     std::cout << rate / 1'000'000 << "M r/s for " << duration << "s :\n";
 
     const int total_reqs = static_cast<int>(rate * duration);
-    int thr_reqs = total_reqs / num_threads;
-    double thr_rate = static_cast<double>(rate) / num_threads; // 10%
+    const int base_reqs = total_reqs / num_threads;
+    const int remainder = total_reqs % num_threads;
+
     std::vector<std::thread> threads;
 
-    // tell server to start timer
     const int admin_sock = make_client();
     const std::string cmd = "START " + std::to_string(total_reqs) + "\n";
     write(admin_sock, cmd.c_str(), cmd.size());
 
-    for (int i = 0; i < num_threads; i++)
+    for (int i = 0; i < num_threads; i++) {
+        int thr_reqs = base_reqs + (i < remainder ? 1 : 0);
+        double thr_rate = static_cast<double>(rate) / num_threads;
         threads.push_back(std::thread(worker, thr_reqs, thr_rate));
+    }
+
     for (auto& t : threads)
         t.join();
 
@@ -80,19 +84,18 @@ void run_test(const int rate, const double duration, const double num_threads) {
     if (const ssize_t bytes = read(admin_sock, buffer, sizeof(buffer)); bytes > 0)
         std::cout << std::string(buffer, bytes);
     std::cout << "\n";
-
 }
 
 int main() {
     std::cout << "\n";
 
-    constexpr int thread_counts[] = {10,20,30,40,50};
+    constexpr int thread_counts[] = {10,20,30};
 
-    for (int num_threads : thread_counts) {
+    for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 10'000'000; rate <= 40'000'000; rate += 10'000'000) {
+        for (int rate = 10'000'000; rate <= 30'000'000; rate += 10'000'000) {
             run_test(rate, 1.0, num_threads);
-            int sleep = 5 + (rate / 10'000'000);
+            int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));
         }
     }
