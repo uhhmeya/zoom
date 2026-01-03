@@ -10,6 +10,7 @@
 #include <atomic>
 #include <iostream>
 
+extern void clear_hp();
 
 std::mutex S;
 int _active = 0;
@@ -28,7 +29,6 @@ std::thread* bthread = nullptr;
 std::atomic stop_bthread{false};
 
 constexpr int sampling_interval_ms = 5;
-
 
 void sample() {
     while (!stop_bthread.load()) {
@@ -56,16 +56,19 @@ void start(const int expected, const int admin_socket) {
     bthread = new std::thread(sample);
 }
 
+// only bthread touches samples
 std::string get_metrics() {
     std::vector<int> sorted_samples;
     std::vector<double> sorted_lats;
 
     {
+        // bthread is stopped, so lock is not needed
         std::lock_guard lock(S);
         sorted_samples = _samples;
     }
 
     {
+        // no more req exist to access lats, so lock is not needed
         std::lock_guard lock(L);
         sorted_lats = _lats;
     }
@@ -146,6 +149,7 @@ void dec_active_log_lat(const double latency_ms) {
             bthread = nullptr;
         }
 
+        clear_hp();
         const std::string metrics = get_metrics();
         write(admin_fd, metrics.c_str(), metrics.size());
     }

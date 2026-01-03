@@ -61,6 +61,12 @@ build CMakeFiles/server.dir/src/metrics.cpp.o: CXX_COMPILER__server_unscanned_De
   OBJECT_DIR = CMakeFiles/server.dir
   OBJECT_FILE_DIR = CMakeFiles/server.dir/src
 
+build CMakeFiles/server.dir/src/lockfree.cpp.o: CXX_COMPILER__server_unscanned_Debug /Users/ameyamandhare/Desktop/school/zoom/src/lockfree.cpp || cmake_object_order_depends_target_server
+  DEP_FILE = CMakeFiles/server.dir/src/lockfree.cpp.o.d
+  FLAGS = -g -std=gnu++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk -fcolor-diagnostics
+  OBJECT_DIR = CMakeFiles/server.dir
+  OBJECT_FILE_DIR = CMakeFiles/server.dir/src
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target server
@@ -69,7 +75,7 @@ build CMakeFiles/server.dir/src/metrics.cpp.o: CXX_COMPILER__server_unscanned_De
 #############################################
 # Link the executable server
 
-build server: CXX_EXECUTABLE_LINKER__server_Debug CMakeFiles/server.dir/src/server.cpp.o CMakeFiles/server.dir/src/metrics.cpp.o
+build server: CXX_EXECUTABLE_LINKER__server_Debug CMakeFiles/server.dir/src/server.cpp.o CMakeFiles/server.dir/src/metrics.cpp.o CMakeFiles/server.dir/src/lockfree.cpp.o
   FLAGS = -g -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
   OBJECT_DIR = CMakeFiles/server.dir
   POST_BUILD = :
@@ -78,35 +84,35 @@ build server: CXX_EXECUTABLE_LINKER__server_Debug CMakeFiles/server.dir/src/serv
   TARGET_PDB = server.dbg
 
 # =============================================================================
-# Object build statements for EXECUTABLE target client
+# Object build statements for EXECUTABLE target test
 
 
 #############################################
-# Order-only phony target for client
+# Order-only phony target for test
 
-build cmake_object_order_depends_target_client: phony || .
+build cmake_object_order_depends_target_test: phony || .
 
-build CMakeFiles/client.dir/src/test.cpp.o: CXX_COMPILER__client_unscanned_Debug /Users/ameyamandhare/Desktop/school/zoom/src/test.cpp || cmake_object_order_depends_target_client
-  DEP_FILE = CMakeFiles/client.dir/src/test.cpp.o.d
+build CMakeFiles/test.dir/src/test.cpp.o: CXX_COMPILER__test_unscanned_Debug /Users/ameyamandhare/Desktop/school/zoom/src/test.cpp || cmake_object_order_depends_target_test
+  DEP_FILE = CMakeFiles/test.dir/src/test.cpp.o.d
   FLAGS = -g -std=gnu++20 -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk -fcolor-diagnostics
-  OBJECT_DIR = CMakeFiles/client.dir
-  OBJECT_FILE_DIR = CMakeFiles/client.dir/src
+  OBJECT_DIR = CMakeFiles/test.dir
+  OBJECT_FILE_DIR = CMakeFiles/test.dir/src
 
 
 # =============================================================================
-# Link build statements for EXECUTABLE target client
+# Link build statements for EXECUTABLE target test
 
 
 #############################################
-# Link the executable client
+# Link the executable test
 
-build client: CXX_EXECUTABLE_LINKER__client_Debug CMakeFiles/client.dir/src/test.cpp.o
+build test: CXX_EXECUTABLE_LINKER__test_Debug CMakeFiles/test.dir/src/test.cpp.o
   FLAGS = -g -arch arm64 -isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX15.4.sdk
-  OBJECT_DIR = CMakeFiles/client.dir
+  OBJECT_DIR = CMakeFiles/test.dir
   POST_BUILD = :
   PRE_LINK = :
-  TARGET_FILE = client
-  TARGET_PDB = client.dbg
+  TARGET_FILE = test
+  TARGET_PDB = test.dbg
 
 
 #############################################
@@ -142,7 +148,7 @@ build rebuild_cache: phony CMakeFiles/rebuild_cache.util
 #############################################
 # Folder: /Users/ameyamandhare/Desktop/school/zoom/cmake-build-debug
 
-build all: phony server client
+build all: phony server test
 
 # =============================================================================
 # Built-in targets

@@ -9,6 +9,8 @@
 #include <chrono>
 #include <shared_mutex>
 
+extern int get_my_hp_index();
+
 extern void start(int expected, int admin_socket);
 extern void inc_active();
 extern void dec_active_log_lat(double latency_ms);
@@ -52,24 +54,20 @@ void Hreq(const std::string& input) {
     bind(server_socket, reinterpret_cast<sockaddr *>(&address), sizeof(address));
     listen(server_socket, 10);
 
-    while (true)
-        {
+    while (true) {
         int client_socket = accept(server_socket, nullptr, nullptr);
 
-        std::thread([client_socket]()
-            {
+        std::thread([client_socket]() {
+            get_my_hp_index();
             std::string data;
             char batch[1024];
             ssize_t bytes_read;
             size_t i;
 
-
-            while ((bytes_read = read(client_socket, batch, 1024)) > 0) // buffer --> batch
-            {
+            while ((bytes_read = read(client_socket, batch, 1024)) > 0) { // buffer --> batch
                 data.append(batch, bytes_read); // batch --> data
 
-                while ((i = data.find('\n')) != std::string::npos)
-                    {
+                while ((i = data.find('\n')) != std::string::npos) {
                     std::string cmd = data.substr(0, i);
                     data.erase(0, i + 1);
 
@@ -86,12 +84,10 @@ void Hreq(const std::string& input) {
                     auto t2 = std::chrono::high_resolution_clock::now();
                     const double lat = std::chrono::duration<double>(t2 - t1).count() * 1000.0;
                     dec_active_log_lat(lat);
-                    }
+                }
             }
-            // runs after no more data in socket buffer
-            // ie handler threads scoop up all reqs sent by client
-            close(client_socket);
-        }).detach();  // handler threads work independently
+            close(client_socket); // buffer has no data
+        }).detach();
     }
 }
 
