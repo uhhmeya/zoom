@@ -1,0 +1,28 @@
+note
+    Hash Table might return older value of key or value of key in prev
+    version of db.
+    eventual consistency property***
+
+1. the key pointer is protected.
+2. the value pointer is protected.
+3. it is confirmed that the value is associated with the key.
+
+Race Condition
+     it is possible that another thread deletes and/or swaps
+    the entries in the slot. So the value returned for the key might no longer
+    be in the dictionary. This improves performance as it prunes the edge case
+    of having a key value pair swapped at the last possible moment.
+
+note
+    slot : kA vA F
+    set(kA, vB)
+    slot : φ φ D
+    slot : φ vB D
+
+is a potential race condition in my code.
+if *ptr_kA == kA during set then we place vb in CPVi
+If another thread deletes kA & vA before the placement
+Then we have a deleted slot with a ghost value
+ghost values are cleaned up when a deleted slot is accessed
+when probing with get()
+
