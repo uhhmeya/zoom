@@ -1,15 +1,11 @@
 #include <atomic>
+#include <sstream>
 #include <string>
 #include <vector>
-#include <thread>
+
 int MAX_THREADS = 100;
 int MAX_KEYS = 1000;
-
-enum class State : uint8_t {
-    EMPTY,
-    FULL,
-    DELETED
-};
+const int RETIRED_THRESHOLD = 100;
 
 enum class ProtectStatus {
     Success,
@@ -25,26 +21,14 @@ struct Result_Of_Protect_Attempt {
 
 struct ProtectMetrics {
     std::atomic<uint64_t> success{0};
-
-    // r : Si = Full
-    // thr2 --> del ptr_ki
-    // protect(CPKi)
-    // ptr_ki == null
     std::atomic<uint64_t> deleted{0};
-
-    // r : Si = Full
-    // protect(container_ptr_vi)
-    // ptr_vi == pointer ∈ container
-    // hp.add(ptr_vi)
-    // thr2 --> set(ki, v')
-    // ptr_vi =/= pointer ∈ container
     std::atomic<uint64_t> changed{0};
 } protection_attempt_metrics;
 
 struct ContentionMetrics {
     std::atomic<uint64_t> key_retries_exhausted{0};
     std::atomic<uint64_t> value_retries_exhausted{0};
-    std::atomic<uint64_t>  key_found_val_deleted{0};
+    std::atomic<uint64_t> key_found_val_deleted{0};
 } contention_metrics;
 
 enum HP_Index {
@@ -60,16 +44,16 @@ struct HP_Slot {
 struct TB_slot {
     std::atomic<std::string*> k{nullptr};
     std::atomic<std::string*> v{nullptr};
-    std::atomic<State> s{State::EMPTY};
+    std::atomic<char> s{'E'};
 };
 
 std::vector<HP_Slot> hp(MAX_THREADS);
 std::vector<TB_slot> tb(MAX_KEYS);
 
+thread_local std::vector<std::string*> retired_list;
 thread_local int my_hp_index = -1;
 
 int get_my_hp_index() {
-    // claim slot
     if (my_hp_index == -1) {
         for (int i = 0; i < MAX_THREADS; i++) {
             bool expected = false;
@@ -80,8 +64,6 @@ int get_my_hp_index() {
         }
         throw std::runtime_error("No HP slots available");
     }
-
-    // access claimed slot
     return my_hp_index;
 }
 
@@ -103,7 +85,6 @@ template<typename T>
 Result_Of_Protect_Attempt<T> protect(std::atomic<T*>& container_of_ptr_ki, const int idx) {
     T* ptr_ki = container_of_ptr_ki.load();
 
-    // other thread deleted ptr
     if (ptr_ki == nullptr) {
         protection_attempt_metrics.deleted.fetch_add(1, std::memory_order_relaxed);
         return {nullptr, ProtectStatus::Deleted};
@@ -111,7 +92,6 @@ Result_Of_Protect_Attempt<T> protect(std::atomic<T*>& container_of_ptr_ki, const
 
     hp[my_hp_index].slot[idx].store(ptr_ki);
 
-    // ptr is protected
     if (ptr_ki == container_of_ptr_ki.load()) {
         protection_attempt_metrics.success.fetch_add(1, std::memory_order_relaxed);
         return {ptr_ki, ProtectStatus::Success};
@@ -119,15 +99,26 @@ Result_Of_Protect_Attempt<T> protect(std::atomic<T*>& container_of_ptr_ki, const
 
     hp[my_hp_index].slot[idx].store(nullptr);
 
-    // other thread deleted ptr
     if (container_of_ptr_ki.load() == nullptr) {
         protection_attempt_metrics.deleted.fetch_add(1, std::memory_order_relaxed);
         return {nullptr, ProtectStatus::Deleted};
     }
 
-    // other thread replaced ptr
     protection_attempt_metrics.changed.fetch_add(1, std::memory_order_relaxed);
     return {nullptr, ProtectStatus::Changed};
+}
+
+template<typename T>
+Result_Of_Protect_Attempt<T> protect_with_retry(std::atomic<T*>& container,const int hp_idx,const int max_retries = 3){
+    auto [ptr, status] = protect(container, hp_idx);
+
+    for (int retry = 0; retry < max_retries && status == ProtectStatus::Changed; retry++) {
+        auto [ptr_retry, status_retry] = protect(container, hp_idx);
+        ptr = ptr_retry;
+        status = status_retry;
+    }
+
+    return {ptr, status};
 }
 
 bool can_delete(const void* ptr) {
@@ -138,69 +129,64 @@ bool can_delete(const void* ptr) {
     return true;
 }
 
+void freeScan() {
+    auto ptr = retired_list.begin();
+    while (ptr != retired_list.end()) {
+        if (can_delete(*ptr)) {
+            delete *ptr;
+            ptr = retired_list.erase(ptr);
+        } else {
+            ++ptr;
+        }
+    }
+}
+
+void retire(std::string* ptr) {
+    if (ptr == nullptr) return;
+    retired_list.push_back(ptr);
+    if (retired_list.size() >= RETIRED_THRESHOLD) {
+        freeScan();
+    }
+}
+
 std::string get(const std::string& kB) {
     const size_t y = hash(kB);
     for (size_t j = 0; j < tb.size(); j++) {
         const size_t i = (y+j) % tb.size();
+        auto& CPSi = tb[i].s;
+        auto& CPKi = tb[i].k;
+        auto& CPVi = tb[i].v;
+        const char Si = CPSi.load();
 
-        auto& container_of_Si = tb[i].s;
-        const State Si = container_of_Si.load();
-        if (Si == State::EMPTY) return "φ";
-        if (Si == State::DELETED) continue;
+        if (Si == 'E') return "φ";
+        if (Si != 'F') continue;
 
-        auto& container_of_ptr_ki = tb[i].k;
-        auto [maybe_ptr_ki, k_status] = protect(container_of_ptr_ki, K);
+        auto [mb_ptr_ki, k_status] = protect_with_retry(CPKi, K, 3);
 
-        // 3 retry for ptr_ki
-        for (int retry = 0; retry < 3 && k_status == ProtectStatus::Changed; retry++) {
-            auto [ptr_ki_retry, k_status_retry] = protect(container_of_ptr_ki, K);
-            maybe_ptr_ki = ptr_ki_retry;
-            k_status = k_status_retry;
-        }
-
-        // all retries failed
+        // retries exhausted
         if (k_status == ProtectStatus::Changed) {
             contention_metrics.key_retries_exhausted.fetch_add(1, std::memory_order_relaxed);
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
-        // other thread deleted ptr_ki
-        if (k_status == ProtectStatus::Deleted)
-            continue;
+        // key deleted during protection
+        if (k_status == ProtectStatus::Deleted) continue;
 
-        // probes if ki was deleted
-        auto ptr_ki = maybe_ptr_ki;
-        if (container_of_Si.load() != State::FULL) {
+        auto ptr_ki = mb_ptr_ki;
+        if (CPSi.load() != 'F') {
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
+        // wrong key
         if (*ptr_ki != kB) {
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
-        // Key matches
-        auto& container_of_ptr_vi = tb[i].v;
-        auto [maybe_ptr_vi, v_status]= protect(container_of_ptr_vi, V);
-
-        // one retry for ptr_vi
-        if (v_status == ProtectStatus::Changed) {
-            auto [ptr_vi_retry, v_status_retry] = protect(container_of_ptr_vi, V);
-            maybe_ptr_vi = ptr_vi_retry;
-            v_status = v_status_retry;
-        }
-
-        // Key was found but value was deleted
-        if (v_status == ProtectStatus::Deleted) {
-            hp[my_hp_index].slot[K].store(nullptr);
-            hp[my_hp_index].slot[V].store(nullptr);
-            contention_metrics.key_found_val_deleted.fetch_add(1, std::memory_order_relaxed);
-            return "φ";
-        }
-
-        // Key was found but value keeps changing
+        // value retry exhausted
+        auto [mb_ptr_vi, v_status] = protect_with_retry(CPVi, V, 1);
         if (v_status == ProtectStatus::Changed) {
             hp[my_hp_index].slot[K].store(nullptr);
             hp[my_hp_index].slot[V].store(nullptr);
@@ -208,21 +194,28 @@ std::string get(const std::string& kB) {
             return "φ";
         }
 
-        // now ptr_ki & ptr_vi are protected. check if ptr_ki was swapped
-        if (ptr_ki != tb[i].k.load()) {
+        // value deleted during protection
+        if (v_status == ProtectStatus::Deleted) {
+            hp[my_hp_index].slot[K].store(nullptr);
+            hp[my_hp_index].slot[V].store(nullptr);
+            contention_metrics.key_found_val_deleted.fetch_add(1, std::memory_order_relaxed);
+            return "φ";
+        }
+
+        // handles case where value is not associated with key
+        if (ptr_ki != CPKi.load()) {
             hp[my_hp_index].slot[K].store(nullptr);
             hp[my_hp_index].slot[V].store(nullptr);
             continue;
         }
 
-        // now we know ki & vi are connected
-        auto ptr_vx = maybe_ptr_vi;
+        auto ptr_vx = mb_ptr_vi;
         std::string vx = *ptr_vx;
         hp[my_hp_index].slot[K].store(nullptr);
         hp[my_hp_index].slot[V].store(nullptr);
         return vx;
     }
-    return "φ"; // kB ∉ db
+    return "φ";
 }
 
 bool set(const std::string& kA, const std::string& vA) {
@@ -234,80 +227,67 @@ bool set(const std::string& kA, const std::string& vA) {
         auto& CPKi = tb[i].k;
         auto& CPVi = tb[i].v;
         auto& CPSi = tb[i].s;
-        const State Si = CPSi.load();
+        const char Si = CPSi.load();
 
-        if (Si == State::EMPTY) {
-            std::string* prev_CPKi = nullptr;
-            if (CPKi.compare_exchange_strong(prev_CPKi, ptr_kA)) {
+        // E → I → F
+        if (Si == 'E') {
+            char expected = 'E';
+            if (CPSi.compare_exchange_strong(expected, 'I')) {
+                CPKi.store(ptr_kA);
                 CPVi.store(ptr_vA);
-                CPSi.store(State::FULL);
+                CPSi.store('F');
                 return true;
             }
             continue;
         }
 
-        if (Si == State::DELETED) {
-
-            // deletes ghost values
-            std::string* ghost_v = CPVi.load();
-            if (ghost_v != nullptr) {
-                std::string* expected = ghost_v;
-                if (CPVi.compare_exchange_strong(expected, nullptr))
-                    if (can_delete(ghost_v))
-                        delete ghost_v;
-            }
-
-            auto expected = State::DELETED;
-            if (CPSi.compare_exchange_strong(expected, State::EMPTY)) {
-                std::string* prev_CPKi = nullptr;
-                if (CPKi.compare_exchange_strong(prev_CPKi, ptr_kA)) {
-                    CPVi.store(ptr_vA);
-                    CPSi.store(State::FULL);
-                    return true;
-                }
+        // D → I → F
+        if (Si == 'D') {
+            char expected = 'D';
+            if (CPSi.compare_exchange_strong(expected, 'I')) {
+                std::string* old_k = CPKi.exchange(ptr_kA);
+                std::string* old_v = CPVi.exchange(ptr_vA);
+                CPSi.store('F');
+                retire(old_k);
+                retire(old_v);
+                return true;
             }
             continue;
         }
 
-        auto [maybe_ptr_ki, k_status] = protect(CPKi, K);
+        if (Si != 'F') continue;
 
-        // 3 retries for ptr_ki
-        for (int retry = 0; retry < 3 && k_status == ProtectStatus::Changed; retry++) {
-            auto [ptr_ki_retry, k_status_retry] = protect(CPKi, K);
-            maybe_ptr_ki = ptr_ki_retry;
-            k_status = k_status_retry;
-        }
-
-        // All retries failed
+        //key retry exhausted
+        auto [mb_ptr_ki, k_status] = protect_with_retry(CPKi, K, 3);
         if (k_status == ProtectStatus::Changed) {
             contention_metrics.key_retries_exhausted.fetch_add(1, std::memory_order_relaxed);
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
-        // Other thread deleted ptr_ki
+        // key deleted during "protection"
         if (k_status == ProtectStatus::Deleted) {
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
-        auto ptr_ki = maybe_ptr_ki;
-        if (CPSi.load() != State::FULL) {
+        // F → U → F
+        auto ptr_ki = mb_ptr_ki;
+        if (*ptr_ki == kA) {
+            char exp = 'F';
+            if (CPSi.compare_exchange_strong(exp, 'U')) {
+                std::string* old_ptr_vi = CPVi.exchange(ptr_vA);
+                CPSi.store('F');
+                hp[my_hp_index].slot[K].store(nullptr);
+                retire(old_ptr_vi);
+                delete ptr_kA;
+                return true;
+            }
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
-
-        if (*ptr_ki == kA) {
-            std::string* old_vi = CPVi.exchange(ptr_vA);
-            hp[my_hp_index].slot[K].store(nullptr);
-            // retire(old_vi);
-            delete ptr_kA;
-            return true;
-        }
         hp[my_hp_index].slot[K].store(nullptr);
     }
-
-    // Table full
     delete ptr_kA;
     delete ptr_vA;
     throw std::runtime_error("Full Table");
@@ -317,59 +297,48 @@ bool del(const std::string& kx) {
     const size_t y = hash(kx);
     for (size_t j = 0; j < tb.size(); j++) {
         const size_t i = (y+j) % tb.size();
-        State s_i = tb[i].s.load();
-        if (s_i == State::EMPTY) return false;
-        if (s_i == State::DELETED) continue;
+        auto& CPSi = tb[i].s;
+        auto& CPKi = tb[i].k;
+        auto& CPVi = tb[i].v;
+        char Si = CPSi.load();
 
-        auto maybe_ptr_ki = protect(tb[i].k, K);
+        if (Si == 'E') return false;
+        if (Si != 'F') continue;
 
-        // other thread deleted ki ; keep probing
-        if (!maybe_ptr_ki.has_value())
+        auto [mb_ptr_ki, k_status] = protect_with_retry(CPKi, K, 3);
+
+        // key retry exhaustion
+        if (k_status == ProtectStatus::Changed) {
+            contention_metrics.key_retries_exhausted.fetch_add(1, std::memory_order_relaxed);
+            hp[my_hp_index].slot[K].store(nullptr);
             continue;
+        }
 
-        std::string* ptr_ki = maybe_ptr_ki.value();
+        // key deleted during protection
+        if (k_status == ProtectStatus::Deleted) continue;
 
-        // ki != kx ; keep probing
+        // wrong key
+        std::string* ptr_ki = mb_ptr_ki;
         if (*ptr_ki != kx) {
             hp[my_hp_index].slot[K].store(nullptr);
             continue;
         }
 
-        hp[my_hp_index].slot[K].store(nullptr);
-
-        auto maybe_ptr_vx = protect(tb[i].v, V);
-
-        // kx ^ vx were deleted by other thread
-        if (!maybe_ptr_vx.has_value()) {
-            return false;
+        // F → X → D
+        char expected = 'F';
+        if (CPSi.compare_exchange_strong(expected, 'X')) {
+            std::string* ptr_k = CPKi.exchange(nullptr);
+            std::string* ptr_v = CPVi.exchange(nullptr);
+            CPSi.store('D');
+            hp[my_hp_index].slot[K].store(nullptr);
+            hp[my_hp_index].slot[V].store(nullptr);
+            retire(ptr_k);
+            retire(ptr_v);
+            return true;
         }
-
-        std::string* ptr_vx = maybe_ptr_vx.value();
-
-        tb[i].s.store(State::DELETED);
-        tb[i].k.store(nullptr);
-        tb[i].v.store(nullptr);
         hp[my_hp_index].slot[K].store(nullptr);
-        hp[my_hp_index].slot[V].store(nullptr);
-
-        if (can_delete(ptr_ki))
-            delete ptr_ki;
-
-        if (can_delete(ptr_vx))
-            delete ptr_vx;
-
-        return true;
+        continue;
     }
-
     // key ∉ DB
     return false;
 }
-
-
-
-
-
-
-
-
-
