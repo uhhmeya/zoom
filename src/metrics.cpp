@@ -10,7 +10,17 @@
 #include <atomic>
 #include <iostream>
 
-extern void clear_hp();
+extern struct ProtectMetrics {
+    std::atomic<uint64_t> success;
+    std::atomic<uint64_t> deleted;
+    std::atomic<uint64_t> changed;
+} protection_attempt_metrics;
+
+extern struct ContentionMetrics {
+    std::atomic<uint64_t> key_retries_exhausted;
+    std::atomic<uint64_t> value_retries_exhausted;
+    std::atomic<uint64_t> key_found_val_deleted;
+} contention_metrics;
 
 std::mutex S;
 int _active = 0;
@@ -20,7 +30,6 @@ std::vector<int> _samples;
 std::mutex L;
 std::vector<double> _lats;
 
-// 1 wr only
 int expc = 0;
 std::chrono::high_resolution_clock::time_point start_time;
 double dur = 0;
@@ -43,8 +52,7 @@ void sample() {
 void start(const int expected, const int admin_socket) {
     std::lock_guard _(S);
     std::lock_guard __(L);
-    
-    // Reset
+
     _active = 0;
     _total = 0;
     _samples.clear();
@@ -56,19 +64,16 @@ void start(const int expected, const int admin_socket) {
     bthread = new std::thread(sample);
 }
 
-// only bthread touches samples
 std::string get_metrics() {
     std::vector<int> sorted_samples;
     std::vector<double> sorted_lats;
 
     {
-        // bthread is stopped, so lock is not needed
         std::lock_guard lock(S);
         sorted_samples = _samples;
     }
 
     {
-        // no more req exist to access lats, so lock is not needed
         std::lock_guard lock(L);
         sorted_lats = _lats;
     }
@@ -111,6 +116,31 @@ std::string get_metrics() {
     oss << std::setprecision(1);
     oss << "    Concurrency:  peak=" << peak << " | min=" << minC << " | mean=" << meanC << " | p50=" << p50C << " | p95=" << p95C << " | p99=" << p99C << " | contention=" << conten << "%\n";
 
+    const uint64_t protect_success = protection_attempt_metrics.success.load();
+    const uint64_t protect_deleted = protection_attempt_metrics.deleted.load();
+    const uint64_t protect_changed = protection_attempt_metrics.changed.load();
+    const uint64_t protect_total = protect_success + protect_deleted + protect_changed;
+
+    if (protect_total > 0) {
+        const double pct_deleted = (static_cast<double>(protect_deleted) / protect_total) * 100.0;
+        const double pct_changed = (static_cast<double>(protect_changed) / protect_total) * 100.0;
+
+        oss << std::setprecision(2);
+        oss << "    Protection:   total_attempts=" << protect_total
+            << " | failed_deleted=" << pct_deleted << "%"
+            << " | failed_changed=" << pct_changed << "%\n";
+    }
+
+    const uint64_t key_retries = contention_metrics.key_retries_exhausted.load();
+    const uint64_t val_retries = contention_metrics.value_retries_exhausted.load();
+    const uint64_t key_val_deleted = contention_metrics.key_found_val_deleted.load();
+
+    if (key_retries > 0 || val_retries > 0 || key_val_deleted > 0) {
+        oss << "    Contention:   key_protection_retries_exhausted=" << key_retries
+            << " | value_protection_retries_exhausted=" << val_retries
+            << " | key_found_but_value_deleted=" << key_val_deleted << "\n";
+    }
+
     return oss.str();
 }
 
@@ -138,7 +168,6 @@ void dec_active_log_lat(const double latency_ms) {
         _lats.push_back(latency_ms);
     }
 
-
     if (should_end_test) {
         const auto end_time = std::chrono::high_resolution_clock::now();
         dur = std::chrono::duration<double>(end_time - start_time).count();
@@ -149,10 +178,7 @@ void dec_active_log_lat(const double latency_ms) {
             bthread = nullptr;
         }
 
-        clear_hp();
         const std::string metrics = get_metrics();
         write(admin_fd, metrics.c_str(), metrics.size());
     }
 }
-
-

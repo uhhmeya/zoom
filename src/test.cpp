@@ -89,11 +89,11 @@ void run_test(const int rate, const double duration, const int num_threads) {
 int main() {
     std::cout << "\n";
 
-    constexpr int thread_counts[] = {10,20,30};
+    constexpr int thread_counts[] = {10,50,99};
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 10'000'000; rate <= 30'000'000; rate += 10'000'000) {
+        for (int rate = 10'000'000; rate <= 30'000'000; rate += 20'000'000) {
             run_test(rate, 1.0, num_threads);
             int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));

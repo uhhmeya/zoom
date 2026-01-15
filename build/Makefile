@@ -142,6 +142,30 @@ test/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/build
 .PHONY : test/fast
 
+src/lockfree.o: src/lockfree.cpp.o
+.PHONY : src/lockfree.o
+
+# target to build an object file
+src/lockfree.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.o
+.PHONY : src/lockfree.cpp.o
+
+src/lockfree.i: src/lockfree.cpp.i
+.PHONY : src/lockfree.i
+
+# target to preprocess a source file
+src/lockfree.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.i
+.PHONY : src/lockfree.cpp.i
+
+src/lockfree.s: src/lockfree.cpp.s
+.PHONY : src/lockfree.s
+
+# target to generate assembly for a file
+src/lockfree.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.s
+.PHONY : src/lockfree.cpp.s
+
 src/metrics.o: src/metrics.cpp.o
 .PHONY : src/metrics.o
 
@@ -224,6 +248,9 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... server"
 	@echo "... test"
+	@echo "... src/lockfree.o"
+	@echo "... src/lockfree.i"
+	@echo "... src/lockfree.s"
 	@echo "... src/metrics.o"
 	@echo "... src/metrics.i"
 	@echo "... src/metrics.s"

@@ -1,22 +1,35 @@
 #include <iostream>
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <unordered_map>
 #include <string>
-#include <mutex>
 #include <thread>
 #include <unistd.h>
 #include <chrono>
-#include <shared_mutex>
+#include <atomic>
+#include <vector>
+
+enum HP_Index {
+    K = 0,
+    V = 1
+};
+
+struct HP_Slot {
+    std::atomic<void*> slot[2]{ nullptr, nullptr };
+    std::atomic<bool> in_use{ false };
+};
+
+extern std::vector<HP_Slot> hp;
+extern thread_local int my_hp_index;
+extern thread_local std::vector<std::string*> retired_list;
 
 extern int get_my_hp_index();
+extern void get(const std::string& key);
+extern void set(const std::string& key, const std::string& value);
+extern void del(const std::string& key);
 
 extern void start(int expected, int admin_socket);
 extern void inc_active();
 extern void dec_active_log_lat(double latency_ms);
-
-std::unordered_map<std::string, std::string> db;
-std::mutex lock;
 
 void Hreq(const std::string& input) {
     const size_t sp0 = input.find(' ');
@@ -24,28 +37,21 @@ void Hreq(const std::string& input) {
 
     if (cmd == "GET") {
         const std::string key = input.substr(sp0 + 1);
-        std::lock_guard _(lock);
-        std::string v = db.count(key) ? db[key] : "NULL";
+        get(key);
     }
-
     else if (cmd == "SET") {
         const size_t sp1 = input.find(' ', sp0+1);
-        const std::string key = input.substr(sp0+1, sp1-sp0 -1);
+        const std::string key = input.substr(sp0+1, sp1-sp0-1);
         const std::string value = input.substr(sp1+1);
-        std::lock_guard _(lock);
-        db[key] = value;
+        set(key, value);
     }
-
     else if (cmd == "DEL") {
         const std::string key = input.substr(sp0 + 1);
-        std::lock_guard _(lock);
-        db.erase(key);
+        del(key);
     }
 }
 
 [[noreturn]] int main() {
-
-    // make server
     const int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in address{};
     address.sin_family = AF_INET;
@@ -64,8 +70,8 @@ void Hreq(const std::string& input) {
             ssize_t bytes_read;
             size_t i;
 
-            while ((bytes_read = read(client_socket, batch, 1024)) > 0) { // buffer --> batch
-                data.append(batch, bytes_read); // batch --> data
+            while ((bytes_read = read(client_socket, batch, 1024)) > 0) {
+                data.append(batch, bytes_read);
 
                 while ((i = data.find('\n')) != std::string::npos) {
                     std::string cmd = data.substr(0, i);
@@ -86,11 +92,14 @@ void Hreq(const std::string& input) {
                     dec_active_log_lat(lat);
                 }
             }
-            close(client_socket); // buffer has no data
+
+            hp[my_hp_index].slot[K].store(nullptr);
+            hp[my_hp_index].slot[V].store(nullptr);
+            for (auto* ptr : retired_list) delete ptr;
+            retired_list.clear();
+            hp[my_hp_index].in_use.store(false);
+
+            close(client_socket);
         }).detach();
     }
 }
-
-
-
-
