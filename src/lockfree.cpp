@@ -12,12 +12,12 @@ enum HP_Index {
     V = 1
 };
 
-struct HP_Slot {
+struct alignas(64) HP_Slot {
     std::atomic<void*> slot[2]{ nullptr, nullptr };
     std::atomic<bool> in_use{ false };
 };
 
-struct TB_slot {
+struct alignas(64) TB_slot {
     std::atomic<std::string*> k{nullptr};
     std::atomic<std::string*> v{nullptr};
     std::atomic<char> s{'E'};
@@ -25,6 +25,7 @@ struct TB_slot {
 
 std::vector<HP_Slot> hp(MAX_THREADS);
 std::vector<TB_slot> tb(MAX_KEYS);
+std::atomic<int> active_thread_count{0};
 
 thread_local std::vector<std::string*> retired_list;
 thread_local int my_hp_index = -1;
@@ -33,8 +34,10 @@ int get_my_hp_index() {
     if (my_hp_index == -1) {
         for (int i = 0; i < MAX_THREADS; i++) {
             bool expected = false;
-            if (hp[i].in_use.compare_exchange_strong(expected, true)) {
+            if (hp[i].in_use.compare_exchange_strong(expected, true,
+                    std::memory_order_acq_rel, std::memory_order_relaxed)) {
                 my_hp_index = i;
+                active_thread_count.fetch_add(1, std::memory_order_relaxed);
                 return i;
             }
         }
@@ -43,33 +46,53 @@ int get_my_hp_index() {
     return my_hp_index;
 }
 
+void release_hp_index() {
+    if (my_hp_index != -1) {
+        hp[my_hp_index].slot[K].store(nullptr, std::memory_order_relaxed);
+        hp[my_hp_index].slot[V].store(nullptr, std::memory_order_relaxed);
+        hp[my_hp_index].in_use.store(false, std::memory_order_release);
+        active_thread_count.fetch_sub(1, std::memory_order_relaxed);
+        my_hp_index = -1;
+    }
+}
+
 size_t hash(const std::string& key) {
     size_t h = 0;
     for (const char c : key) h = h * 31 + c;
-    return h % tb.size();
+    return h;
+}
+
+size_t hash2(const std::string& key) {
+    size_t h = 5381;
+    for (const char c : key) h = ((h << 5) + h) ^ c;
+    return h | 1;
 }
 
 template<typename T>
 T* protect(std::atomic<T*>& container, const int idx) {
-    T* ptr_ki = container.load();
-    if (ptr_ki == nullptr) return nullptr;
+    T* ptr;
+    do {
+        ptr = container.load(std::memory_order_acquire);
+        if (ptr == nullptr) return nullptr;
+        hp[my_hp_index].slot[idx].store(ptr, std::memory_order_release);
+    } while (ptr != container.load(std::memory_order_acquire));
+    return ptr;
+}
 
-    // free ptr_ki
-    // reclaim ptr_ki -> k' ABA!!!!
+inline void clear_hp(const int idx) {
+    hp[my_hp_index].slot[idx].store(nullptr, std::memory_order_relaxed);
+}
 
-    hp[my_hp_index].slot[idx].store(ptr_ki);
-
-    if (ptr_ki == container.load())
-        return ptr_ki;
-
-    hp[my_hp_index].slot[idx].store(nullptr);
-    return nullptr;
+inline void clear_hp_both() {
+    hp[my_hp_index].slot[K].store(nullptr, std::memory_order_relaxed);
+    hp[my_hp_index].slot[V].store(nullptr, std::memory_order_relaxed);
 }
 
 bool can_delete(const void* ptr) {
     for (int i = 0; i < MAX_THREADS; i++) {
-        if (hp[i].slot[K].load() == ptr) return false;
-        if (hp[i].slot[V].load() == ptr) return false;
+        if (!hp[i].in_use.load(std::memory_order_acquire)) continue;
+        if (hp[i].slot[K].load(std::memory_order_acquire) == ptr) return false;
+        if (hp[i].slot[V].load(std::memory_order_acquire) == ptr) return false;
     }
     return true;
 }
@@ -94,69 +117,74 @@ void retire(std::string* ptr) {
     }
 }
 
-void get(const std::string& kB) {
+std::string* get(const std::string& kB) {
+    get_my_hp_index();
     const size_t y = hash(kB);
-    for (size_t j = 0; j < tb.size(); j++) {
-        const size_t i = (y+j) % tb.size();
+    const size_t step = hash2(kB);
+    const size_t table_size = tb.size();
+
+    for (size_t j = 0; j < table_size; j++) {
+        const size_t i = (y + j * step) % table_size;
         auto& CPSi = tb[i].s;
         auto& CPKi = tb[i].k;
         auto& CPVi = tb[i].v;
-        const char Si = CPSi.load();
+        const char Si = CPSi.load(std::memory_order_acquire);
 
-        if (Si == 'E') return;
+        if (Si == 'E') return nullptr;
         if (Si != 'F') continue;
 
-        // protect key
         std::string* ptr_ki = protect(CPKi, K);
         if (ptr_ki == nullptr) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
-       // wrong key
         if (*ptr_ki != kB) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
-        // protect value
         std::string* ptr_vi = protect(CPVi, V);
         if (ptr_vi == nullptr) {
-            hp[my_hp_index].slot[K].store(nullptr);
-            hp[my_hp_index].slot[V].store(nullptr);
-            return;
+            clear_hp_both();
+            return nullptr;
         }
 
-        // key deleted
-        if (ptr_ki != CPKi.load()) {
-            hp[my_hp_index].slot[K].store(nullptr);
-            hp[my_hp_index].slot[V].store(nullptr);
+        if (ptr_ki != CPKi.load(std::memory_order_acquire)) {
+            clear_hp_both();
             continue;
         }
 
-        hp[my_hp_index].slot[K].store(nullptr);
-        hp[my_hp_index].slot[V].store(nullptr);
-        return;  // *ptr_vi
+        clear_hp_both();
+        return ptr_vi;
     }
+    return nullptr;
 }
 
 void set(const std::string& kA, const std::string& vA) {
+    get_my_hp_index();
     const size_t y = hash(kA);
-    const auto ptr_kA = new std::string(kA);
-    const auto ptr_vA = new std::string(vA);
-    for (size_t j = 0; j < tb.size(); j++) {
-        const size_t i = (y + j) % tb.size();
+    const size_t step = hash2(kA);
+    const size_t table_size = tb.size();
+    std::string* ptr_kA = nullptr;
+    std::string* ptr_vA = nullptr;
+
+    for (size_t j = 0; j < table_size; j++) {
+        const size_t i = (y + j * step) % table_size;
         auto& CPKi = tb[i].k;
         auto& CPVi = tb[i].v;
         auto& CPSi = tb[i].s;
-        const char Si = CPSi.load();
+        const char Si = CPSi.load(std::memory_order_acquire);
 
         if (Si == 'E') {
             char expected = 'E';
-            if (CPSi.compare_exchange_strong(expected, 'I')) {
-                CPKi.store(ptr_kA);
-                CPVi.store(ptr_vA);
-                CPSi.store('F');
+            if (CPSi.compare_exchange_strong(expected, 'I',
+                    std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (!ptr_kA) ptr_kA = new std::string(kA);
+                if (!ptr_vA) ptr_vA = new std::string(vA);
+                CPKi.store(ptr_kA, std::memory_order_relaxed);
+                CPVi.store(ptr_vA, std::memory_order_relaxed);
+                CPSi.store('F', std::memory_order_release);
                 return;
             }
             continue;
@@ -164,10 +192,13 @@ void set(const std::string& kA, const std::string& vA) {
 
         if (Si == 'D') {
             char expected = 'D';
-            if (CPSi.compare_exchange_strong(expected, 'I')) {
-                std::string* old_k = CPKi.exchange(ptr_kA);
-                std::string* old_v = CPVi.exchange(ptr_vA);
-                CPSi.store('F');
+            if (CPSi.compare_exchange_strong(expected, 'I',
+                    std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (!ptr_kA) ptr_kA = new std::string(kA);
+                if (!ptr_vA) ptr_vA = new std::string(vA);
+                std::string* old_k = CPKi.exchange(ptr_kA, std::memory_order_acq_rel);
+                std::string* old_v = CPVi.exchange(ptr_vA, std::memory_order_acq_rel);
+                CPSi.store('F', std::memory_order_release);
                 retire(old_k);
                 retire(old_v);
                 return;
@@ -177,43 +208,43 @@ void set(const std::string& kA, const std::string& vA) {
 
         if (Si != 'F') continue;
 
-        // protect key
         std::string* ptr_ki = protect(CPKi, K);
         if (ptr_ki == nullptr) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
-        // wrong key
         if (*ptr_ki != kA) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
-        // key deleted
-        if (ptr_ki != CPKi.load()) {
-            hp[my_hp_index].slot[K].store(nullptr);
-            return;
+        // deleted key
+        if (ptr_ki != CPKi.load(std::memory_order_acquire)) {
+            clear_hp(K);
+            continue;
         }
 
         char exp = 'F';
-        if (CPSi.compare_exchange_strong(exp, 'U')) {
+        if (CPSi.compare_exchange_strong(exp, 'U',
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
 
-            // key deleted
-            if (ptr_ki != CPKi.load()) {
-                CPSi.store('F');
-                hp[my_hp_index].slot[K].store(nullptr);
-                return;
+            // deleted key
+            if (ptr_ki != CPKi.load(std::memory_order_acquire)) {
+                CPSi.store('F', std::memory_order_release);
+                clear_hp(K);
+                continue;
             }
 
-            std::string* old_ptr_vi = CPVi.exchange(ptr_vA);
-            CPSi.store('F');
-            hp[my_hp_index].slot[K].store(nullptr);
+            if (!ptr_vA) ptr_vA = new std::string(vA);
+            std::string* old_ptr_vi = CPVi.exchange(ptr_vA, std::memory_order_acq_rel);
+            CPSi.store('F', std::memory_order_release);
+            clear_hp(K);
             retire(old_ptr_vi);
             delete ptr_kA;
             return;
         }
-        hp[my_hp_index].slot[K].store(nullptr);
+        clear_hp(K);
         continue;
     }
     delete ptr_kA;
@@ -222,13 +253,17 @@ void set(const std::string& kA, const std::string& vA) {
 }
 
 void del(const std::string& kx) {
+    get_my_hp_index();
     const size_t y = hash(kx);
-    for (size_t j = 0; j < tb.size(); j++) {
-        const size_t i = (y+j) % tb.size();
+    const size_t step = hash2(kx);
+    const size_t table_size = tb.size();
+
+    for (size_t j = 0; j < table_size; j++) {
+        const size_t i = (y + j * step) % table_size;
         auto& CPSi = tb[i].s;
         auto& CPKi = tb[i].k;
         auto& CPVi = tb[i].v;
-        char Si = CPSi.load();
+        char Si = CPSi.load(std::memory_order_acquire);
 
         if (Si == 'E') return;
         if (Si != 'F') continue;
@@ -236,42 +271,41 @@ void del(const std::string& kx) {
         std::string* ptr_ki = protect(CPKi, K);
 
         if (ptr_ki == nullptr) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
-        // wrong key
         if (*ptr_ki != kx) {
-            hp[my_hp_index].slot[K].store(nullptr);
+            clear_hp(K);
             continue;
         }
 
         // key deleted
-        if (ptr_ki != CPKi.load()) {
-            hp[my_hp_index].slot[K].store(nullptr);
-            return;
+        if (ptr_ki != CPKi.load(std::memory_order_acquire)) {
+            clear_hp(K);
+            continue;
         }
 
         char expected = 'F';
-        if (CPSi.compare_exchange_strong(expected, 'X')) {
+        if (CPSi.compare_exchange_strong(expected, 'X',
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
 
             // key deleted
-            if (ptr_ki != CPKi.load()) {
-                CPSi.store('F');
-                hp[my_hp_index].slot[K].store(nullptr);
-                return;
+            if (ptr_ki != CPKi.load(std::memory_order_acquire)) {
+                CPSi.store('F', std::memory_order_release);
+                clear_hp(K);
+                continue;
             }
 
-            std::string* ptr_k = CPKi.exchange(nullptr);
-            std::string* ptr_v = CPVi.exchange(nullptr);
-            CPSi.store('D');
-            hp[my_hp_index].slot[K].store(nullptr);
-            hp[my_hp_index].slot[V].store(nullptr);
+            std::string* ptr_k = CPKi.exchange(nullptr, std::memory_order_acq_rel);
+            std::string* ptr_v = CPVi.exchange(nullptr, std::memory_order_acq_rel);
+            CPSi.store('D', std::memory_order_release);
+            clear_hp_both();
             retire(ptr_k);
             retire(ptr_v);
             return;
         }
-        hp[my_hp_index].slot[K].store(nullptr);
+        clear_hp(K);
         continue;
     }
 }

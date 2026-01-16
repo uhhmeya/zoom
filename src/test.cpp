@@ -44,7 +44,7 @@ void worker(const int num_requests, const double rate_per_second) {
     for (int i = 0; i < num_requests; i++) {
         auto start = std::chrono::high_resolution_clock::now();
 
-        bool is_hot = traffic_dist(gen) <= 90;  // 90% of traffic on hot keys
+        bool is_hot = traffic_dist(gen) <= 98;  // 98% of traffic on hot keys
         int key = is_hot ? hot_key_dist(gen) : cold_key_dist(gen);
 
         std::string cmd;
@@ -115,7 +115,7 @@ int main() {
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 50'000'000; rate <= 100'000'000; rate += 900'000'000) {
+        for (int rate = 80'000'000; rate <= 100'000'000; rate += 900'000'000) {
             run_test(rate, 0.9, num_threads);
             int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));
