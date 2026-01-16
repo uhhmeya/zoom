@@ -29,32 +29,51 @@ void worker(const int num_requests, const double rate_per_second) {
 
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<> op_dist(1, 3);
-    std::uniform_int_distribution<> key_dist(0, 100);
+
+    std::uniform_int_distribution<> traffic_dist(1, 100);
+    std::uniform_int_distribution<> hot_key_dist(0, 2);     // 3 HOT KEYS!
+    std::uniform_int_distribution<> cold_key_dist(3, 20);   // 17 cold keys
+
+    std::uniform_int_distribution<> hot_op_dist(1, 10);
+    std::uniform_int_distribution<> cold_op_dist(1, 10);
+
     std::uniform_int_distribution<> val_dist(0, 1000);
 
     const auto delay = std::chrono::nanoseconds(static_cast<long long>(1.0 / rate_per_second * 1e9));
 
     for (int i = 0; i < num_requests; i++) {
         auto start = std::chrono::high_resolution_clock::now();
-        const int op = op_dist(gen);
-        std::string cmd;
 
-        if (op == 1) cmd = "SET key_"+std::to_string(key_dist(gen))+" value_"+ std::to_string(val_dist(gen)) + "\n";
-        else if (op == 2) cmd = "GET key_" + std::to_string(key_dist(gen)) + "\n";
-        else  cmd = "DEL key_" + std::to_string(key_dist(gen)) + "\n";
+        bool is_hot = traffic_dist(gen) <= 90;  // 90% of traffic on hot keys
+        int key = is_hot ? hot_key_dist(gen) : cold_key_dist(gen);
+
+        std::string cmd;
+        if (is_hot) {
+            // Hot keys: 10% SET, 10% GET, 80% DEL
+            int op = hot_op_dist(gen);
+            if (op <= 1) cmd = "SET key_" + std::to_string(key) + " value_" + std::to_string(val_dist(gen)) + "\n";
+            else if (op <= 2) cmd = "GET key_" + std::to_string(key) + "\n";
+            else cmd = "DEL key_" + std::to_string(key) + "\n";
+        } else {
+            // Cold keys: 40% SET, 40% GET, 20% DEL
+            int op = cold_op_dist(gen);
+            if (op <= 4) cmd = "SET key_" + std::to_string(key) + " value_" + std::to_string(val_dist(gen)) + "\n";
+            else if (op <= 8) cmd = "GET key_" + std::to_string(key) + "\n";
+            else cmd = "DEL key_" + std::to_string(key) + "\n";
+        }
 
         write(sock, cmd.c_str(), cmd.size());
 
-        // maintain rate
         auto end = std::chrono::high_resolution_clock::now();
         auto elapsed = end - start;
         if (auto sleep_time = delay - elapsed; sleep_time.count() > 0)
             std::this_thread::sleep_for(sleep_time);
     }
+
+    shutdown(sock, SHUT_WR);
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
     close(sock);
 }
-
 
 
 void run_test(const int rate, const double duration, const int num_threads) {
@@ -79,11 +98,14 @@ void run_test(const int rate, const double duration, const int num_threads) {
     for (auto& t : threads)
         t.join();
 
-    // display result
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
     char buffer[4096];
     if (const ssize_t bytes = read(admin_sock, buffer, sizeof(buffer)); bytes > 0)
         std::cout << std::string(buffer, bytes);
     std::cout << "\n";
+
+    close(admin_sock);
 }
 
 int main() {
@@ -93,8 +115,8 @@ int main() {
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 10'000'000; rate <= 30'000'000; rate += 20'000'000) {
-            run_test(rate, 1.0, num_threads);
+        for (int rate = 50'000'000; rate <= 100'000'000; rate += 900'000'000) {
+            run_test(rate, 0.9, num_threads);
             int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));
         }
