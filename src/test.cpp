@@ -115,8 +115,8 @@ int main() {
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 80'000'000; rate <= 100'000'000; rate += 900'000'000) {
-            run_test(rate, 0.9, num_threads);
+        for (int rate = 150'000'000; rate <= 400'000'000; rate += 999'000'000) {
+            run_test(rate, 0.6, num_threads);
             int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));
         }
