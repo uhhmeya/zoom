@@ -22,6 +22,8 @@ extern std::vector<HP_Slot> hp;
 extern thread_local int my_hp_index;
 extern thread_local std::vector<std::string*> retired_list;
 
+extern void inc_set_count();
+
 extern int get_my_hp_index();
 extern void get(const std::string& key);
 extern void set(const std::string& key, const std::string& value);
@@ -43,6 +45,7 @@ void Hreq(const std::string& input) {
         const size_t sp1 = input.find(' ', sp0+1);
         const std::string key = input.substr(sp0+1, sp1-sp0-1);
         const std::string value = input.substr(sp1+1);
+        inc_set_count();
         set(key, value);
     }
     else if (cmd == "DEL") {

@@ -111,7 +111,7 @@ void run_test(const int rate, const double duration, const int num_threads) {
 int main() {
     std::cout << "\n";
 
-    constexpr int thread_counts[] = {10,50,99};
+    constexpr int thread_counts[] = {10,20,99};
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";

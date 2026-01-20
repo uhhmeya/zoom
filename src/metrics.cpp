@@ -10,9 +10,12 @@
 #include <atomic>
 #include <iostream>
 
+extern std::string get_spin_metrics(int total_set_ops);
+
 std::mutex S;
 std::atomic<int> _active{0};
 std::atomic<int> _total{0};
+std::atomic<int> _set_total{0};
 std::vector<int> _samples;
 
 std::mutex L;
@@ -43,6 +46,7 @@ void start(const int expected, const int admin_socket) {
 
     _active.store(0);
     _total.store(0);
+    _set_total.store(0);
     _samples.clear();
     _lats.clear();
 
@@ -105,9 +109,13 @@ std::string get_metrics() {
     oss << "    Throughput:   requests=" << _total.load() << " | duration=" << dur << "s | rate=" << (_total.load()/dur/1'000'000.0) << "M req/s\n";
     oss << std::setprecision(1);
     oss << "    Concurrency:  peak=" << peak << " | min=" << minC << " | mean=" << meanC << " | p50=" << p50C << " | p95=" << p95C << " | p99=" << p99C << " | contention=" << conten << "%\n";
+    oss << "    Operations:   sets=" << _set_total.load() << " | total=" << _total.load() << "\n";
+    oss << get_spin_metrics(_set_total.load());
 
     return oss.str();
 }
+
+void inc_set_count() { _set_total.fetch_add(1, std::memory_order_relaxed); }
 
 void inc_active() {
     _active.fetch_add(1, std::memory_order_relaxed);
