@@ -11,6 +11,7 @@
 #include <iostream>
 
 extern std::string get_spin_metrics(int total_set_ops);
+extern std::string get_transition_metrics();
 
 std::mutex S;
 std::atomic<int> _active{0};
@@ -111,6 +112,7 @@ std::string get_metrics() {
     oss << "    Concurrency:  peak=" << peak << " | min=" << minC << " | mean=" << meanC << " | p50=" << p50C << " | p95=" << p95C << " | p99=" << p99C << " | contention=" << conten << "%\n";
     oss << "    Operations:   sets=" << _set_total.load() << " | total=" << _total.load() << "\n";
     oss << get_spin_metrics(_set_total.load());
+    oss << get_transition_metrics();
 
     return oss.str();
 }
