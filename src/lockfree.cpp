@@ -28,7 +28,9 @@ enum TransitionType {
     DIF_TRANS,
     FUF_TRANS,
     FUF_ABORT_TRANS,
-    FXD_TRANS
+    FUF_ABORT_DELETE_TRANS,
+    FXD_TRANS,
+    FXD_ABORT_TRANS
 };
 
 struct alignas(64) SpinMetrics {
@@ -62,14 +64,18 @@ struct alignas(64) TransitionMetrics {
     std::vector<double> DIF_times;   // insert into deleted
     std::vector<double> FUF_times;   // update
     std::vector<double> FXD_times;   // delete
-    std::vector<double> FUF_abort_times; // abort (key deleted)
+    std::vector<double> FUF_abort_times; // abort (key swapped)
+    std::vector<double> FUF_abort_delete_times; // abort (key deleted)
+    std::vector<double> FXD_abort_times; // abort (job already done)
 
     // Counts
     uint64_t EIF_count{0};
     uint64_t DIF_count{0};
     uint64_t FUF_count{0};
-    uint64_t FUF_abort_count{0};     // edge case
+    uint64_t FUF_abort_count{0}; // key swapped during set
+    uint64_t FUF_abort_delete_count{0}; // key deleted during set
     uint64_t FXD_count{0};
+    uint64_t FXD_abort_count{0}; // key deleted during del
 
     TransitionMetrics() {
         EIF_times.reserve(10000);
@@ -77,6 +83,8 @@ struct alignas(64) TransitionMetrics {
         FUF_times.reserve(100000);
         FXD_times.reserve(10000);
         FUF_abort_times.reserve(1000);
+        FUF_abort_delete_times.reserve(1000);
+        FXD_abort_times.reserve(1000);
     }
 };
 
@@ -104,31 +112,47 @@ int get_my_hp_index() {
 
 void log_transition(TransitionType type,
                    std::chrono::high_resolution_clock::time_point start,
-                   std::chrono::high_resolution_clock::time_point end) {
+                   std::chrono::high_resolution_clock::time_point end){
+
     double duration_ms = std::chrono::duration<double>(end - start).count() * 1000.0;
     auto& tm = transition_metrics[my_hp_index];
 
     switch(type) {
+
         case EIF_TRANS:
             tm.EIF_times.push_back(duration_ms);
-        tm.EIF_count++;
-        break;
+            tm.EIF_count++;
+            break;
+
         case DIF_TRANS:
             tm.DIF_times.push_back(duration_ms);
-        tm.DIF_count++;
-        break;
+            tm.DIF_count++;
+            break;
+
         case FUF_TRANS:
             tm.FUF_times.push_back(duration_ms);
-        tm.FUF_count++;
-        break;
+            tm.FUF_count++;
+            break;
+
         case FUF_ABORT_TRANS:
             tm.FUF_abort_times.push_back(duration_ms);
-        tm.FUF_abort_count++;
-        break;
+            tm.FUF_abort_count++;
+            break;
+
+        case FUF_ABORT_DELETE_TRANS:
+            tm.FUF_abort_delete_times.push_back(duration_ms);
+            tm.FUF_abort_delete_count++;
+            break;
+
         case FXD_TRANS:
             tm.FXD_times.push_back(duration_ms);
-        tm.FXD_count++;
-        break;
+            tm.FXD_count++;
+            break;
+
+        case FXD_ABORT_TRANS:
+            tm.FXD_abort_times.push_back(duration_ms);
+            tm.FXD_abort_count++;
+            break;
     }
 }
 
@@ -380,9 +404,8 @@ std::string get_spin_metrics(int total_set_ops) {
 }
 
 std::string get_transition_metrics() {
-    // Aggregate all transition data from all threads
-    std::vector<double> all_EIF, all_DIF, all_FUF, all_FXD, all_FUF_abort;
-    uint64_t total_EIF = 0, total_DIF = 0, total_FUF = 0, total_FXD = 0, total_FUF_abort = 0;
+    std::vector<double> all_EIF, all_DIF, all_FUF, all_FXD, all_FUF_abort, all_FUF_abort_delete, all_FXD_abort;
+    uint64_t total_EIF = 0, total_DIF = 0, total_FUF = 0, total_FXD = 0, total_FUF_abort = 0, total_FUF_abort_delete = 0, total_FXD_abort = 0;
 
     for (const auto& tm : transition_metrics) {
         all_EIF.insert(all_EIF.end(), tm.EIF_times.begin(), tm.EIF_times.end());
@@ -390,18 +413,21 @@ std::string get_transition_metrics() {
         all_FUF.insert(all_FUF.end(), tm.FUF_times.begin(), tm.FUF_times.end());
         all_FXD.insert(all_FXD.end(), tm.FXD_times.begin(), tm.FXD_times.end());
         all_FUF_abort.insert(all_FUF_abort.end(), tm.FUF_abort_times.begin(), tm.FUF_abort_times.end());
+        all_FUF_abort_delete.insert(all_FUF_abort_delete.end(), tm.FUF_abort_delete_times.begin(), tm.FUF_abort_delete_times.end());
+        all_FXD_abort.insert(all_FXD_abort.end(), tm.FXD_abort_times.begin(), tm.FXD_abort_times.end());
 
         total_EIF += tm.EIF_count;
         total_DIF += tm.DIF_count;
         total_FUF += tm.FUF_count;
         total_FXD += tm.FXD_count;
         total_FUF_abort += tm.FUF_abort_count;
+        total_FUF_abort_delete += tm.FUF_abort_delete_count;
+        total_FXD_abort += tm.FXD_abort_count;
     }
 
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(4);
 
-    // Helper lambda to compute and format stats for a transition type
     auto format_transition = [&](const std::string& name,
                                  const std::vector<double>& times,
                                  uint64_t count) -> std::string {
@@ -438,17 +464,24 @@ std::string get_transition_metrics() {
     };
 
     oss << "    Transitions:\n";
-    oss << format_transition("E→I→F (insert empty) ", all_EIF, total_EIF);
-    oss << format_transition("D→I→F (insert deleted)", all_DIF, total_DIF);
-    oss << format_transition("F→U→F (update)        ", all_FUF, total_FUF);
-    oss << format_transition("F→X→D (delete)        ", all_FXD, total_FXD);
+    oss << format_transition("E→I→F (insert empty)    ", all_EIF, total_EIF);
+    oss << format_transition("D→I→F (insert deleted)  ", all_DIF, total_DIF);
+    oss << format_transition("F→U→F (update)          ", all_FUF, total_FUF);
+    oss << format_transition("F→X→D (delete)          ", all_FXD, total_FXD);
 
     if (total_FUF_abort > 0) {
-        oss << format_transition("F→U→F (ABORT!)       ", all_FUF_abort, total_FUF_abort);
+        oss << format_transition("F→U→F (abort swap)     ", all_FUF_abort, total_FUF_abort);
     }
 
-    // Summary statistics
-    uint64_t total_transitions = total_EIF + total_DIF + total_FUF + total_FXD + total_FUF_abort;
+    if (total_FUF_abort_delete > 0) {
+        oss << format_transition("F→U→D (abort delete)   ", all_FUF_abort_delete, total_FUF_abort_delete);
+    }
+
+    if (total_FXD_abort > 0) {
+        oss << format_transition("F→X→D (abort)          ", all_FXD_abort, total_FXD_abort);
+    }
+
+    uint64_t total_transitions = total_EIF + total_DIF + total_FUF + total_FXD + total_FUF_abort + total_FUF_abort_delete + total_FXD_abort;
     if (total_transitions > 0) {
         oss << std::setprecision(1);
         oss << "    Distribution: "
@@ -458,8 +491,17 @@ std::string get_transition_metrics() {
             << "FXD=" << (total_FXD * 100.0 / total_transitions) << "%";
 
         if (total_FUF_abort > 0) {
-            oss << " | ABORT=" << (total_FUF_abort * 100.0 / total_transitions) << "%";
+            oss << " | FUF_ABORT_SWAP=" << (total_FUF_abort * 100.0 / total_transitions) << "%";
         }
+
+        if (total_FUF_abort_delete > 0) {
+            oss << " | FUF_ABORT_DEL=" << (total_FUF_abort_delete * 100.0 / total_transitions) << "%";
+        }
+
+        if (total_FXD_abort > 0) {
+            oss << " | FXD_ABORT=" << (total_FXD_abort * 100.0 / total_transitions) << "%";
+        }
+
         oss << "\n";
     }
 
@@ -513,7 +555,7 @@ std::string* get(const std::string& kB) {
 }
 
 void key_deleted_during_spin(bool did_spin, int spin_count, int cooldowns_hit,
-                             std::chrono::high_resolution_clock::time_point spin_start) {
+    std::chrono::high_resolution_clock::time_point spin_start) {
     // end spin
     if (did_spin) {
         auto spin_end = std::chrono::high_resolution_clock::now();
@@ -639,7 +681,7 @@ void set(const std::string& kA, const std::string& vA) {
                 continue;
             }
 
-            // key deleted ; probe
+            // key deleted/swapped ; probe
             if (ptr_ki != CPKi.load(acquire)) {
                 key_deleted_during_spin(did_spin, spin_count, cooldowns_hit, spin_start);
                 break;
@@ -649,11 +691,21 @@ void set(const std::string& kA, const std::string& vA) {
             if (CPSi.compare_exchange_strong(updated_Si, 'U', acq_rel, relaxed)) {
                 auto trans_start = std::chrono::high_resolution_clock::now();
 
-                // key deleted ; probe (ABORT CASE)
+                // key deleted/swapped ; probe (ABORT CASE)
                 if (ptr_ki != CPKi.load(acquire)) {
-                    CPSi.store('F', release);  // restore state
                     auto trans_end = std::chrono::high_resolution_clock::now();
-                    log_transition(FUF_ABORT_TRANS, trans_start, trans_end);
+
+                    // Check what happened to the key pointer
+                    std::string* current_ki = CPKi.load(acquire);
+                    if (current_ki == nullptr) {
+                        // Key was deleted by another thread → U to D
+                        CPSi.store('D', release);
+                        log_transition(FUF_ABORT_DELETE_TRANS, trans_start, trans_end);
+                    } else {
+                        // Key was swapped by another thread → U to F
+                        CPSi.store('F', release);
+                        log_transition(FUF_ABORT_TRANS, trans_start, trans_end);
+                    }
 
                     key_deleted_during_spin(did_spin, spin_count, cooldowns_hit, spin_start);
                     break;
@@ -700,17 +752,19 @@ void del(const std::string& kx) {
 
         std::string* ptr_ki = protect(CPKi, K);
 
+        // key deleted/swap
         if (ptr_ki == nullptr) {
             clear_hp(K);
             continue;
         }
 
+        // wrong key
         if (*ptr_ki != kx) {
             clear_hp(K);
             continue;
         }
 
-        // key deleted
+        // key deleted/swap
         if (ptr_ki != CPKi.load(acquire)) {
             clear_hp(K);
             continue;
@@ -718,13 +772,16 @@ void del(const std::string& kx) {
 
         char expected = 'F';
         if (CPSi.compare_exchange_strong(expected, 'X', acq_rel, relaxed)) {
+
             auto trans_start = std::chrono::high_resolution_clock::now();
 
-            // key deleted
+            // key deleted / swapped
             if (ptr_ki != CPKi.load(acquire)) {
-                CPSi.store('F', release);
+                CPSi.store('D', release); // FXD abort (job already done)
                 clear_hp(K);
-                continue;
+                auto trans_end = std::chrono::high_resolution_clock::now();
+                log_transition(FXD_ABORT_TRANS, trans_start, trans_end);
+                return;
             }
 
             std::string* ptr_k = CPKi.exchange(nullptr, acq_rel);
