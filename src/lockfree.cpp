@@ -8,6 +8,15 @@
 #include <chrono>
 #include <iostream>
 
+using std::string;
+using std::vector;
+using std::atomic;
+using std::ostringstream;
+using std::runtime_error;
+namespace chrono = std::chrono;
+using TimePoint = chrono::high_resolution_clock::time_point;
+using HRClock = chrono::high_resolution_clock;
+
 constexpr int MAX_THREADS = 250;
 constexpr int MAX_KEYS = 100;
 constexpr int RETIRED_THRESHOLD = 100;
@@ -34,9 +43,9 @@ enum TransitionType {
 };
 
 struct alignas(64) SpinMetrics {
-    std::vector<int> spins_per_req;
-    std::vector<int> cooldowns_per_req;
-    std::vector<double> spin_time_ms_per_req;
+    vector<int> spins_per_req;
+    vector<int> cooldowns_per_req;
+    vector<double> spin_time_ms_per_req;
     uint64_t reqs_that_spun{0};
     uint64_t successful_spins{0};
     uint64_t aborted_spins{0};
@@ -49,24 +58,24 @@ struct alignas(64) SpinMetrics {
 };
 
 struct alignas(64) HP_Slot {
-    std::atomic<void*> slot[2]{ nullptr, nullptr };
-    std::atomic<bool> in_use{ false };
+    atomic<void*> slot[2]{ nullptr, nullptr };
+    atomic<bool> in_use{ false };
 };
 
 struct alignas(64) TB_slot {
-    std::atomic<std::string*> k{nullptr};
-    std::atomic<std::string*> v{nullptr};
-    std::atomic<char> s{'E'};
+    atomic<string*> k{nullptr};
+    atomic<string*> v{nullptr};
+    atomic<char> s{'E'};
 };
 
 struct alignas(64) TransitionMetrics {
-    std::vector<double> EIF_times;   // insert into empty
-    std::vector<double> DIF_times;   // insert into deleted
-    std::vector<double> FUF_times;   // update
-    std::vector<double> FXD_times;   // delete
-    std::vector<double> FUF_abort_times; // abort (key swapped)
-    std::vector<double> FUF_abort_delete_times; // abort (key deleted)
-    std::vector<double> FXD_abort_times; // abort (job already done)
+    vector<double> EIF_times;   // insert into empty
+    vector<double> DIF_times;   // insert into deleted
+    vector<double> FUF_times;   // update
+    vector<double> FXD_times;   // delete
+    vector<double> FUF_abort_times; // abort (key swapped)
+    vector<double> FUF_abort_delete_times; // abort (key deleted)
+    vector<double> FXD_abort_times; // abort (job already done)
 
     // Counts
     uint64_t EIF_count{0};
@@ -88,12 +97,12 @@ struct alignas(64) TransitionMetrics {
     }
 };
 
-std::vector<TransitionMetrics> transition_metrics(MAX_THREADS);
-std::vector<HP_Slot> hp(MAX_THREADS);
-std::vector<TB_slot> tb(MAX_KEYS);
-std::vector<SpinMetrics> spin_metrics(MAX_THREADS);
+vector<TransitionMetrics> transition_metrics(MAX_THREADS);
+vector<HP_Slot> hp(MAX_THREADS);
+vector<TB_slot> tb(MAX_KEYS);
+vector<SpinMetrics> spin_metrics(MAX_THREADS);
 
-thread_local std::vector<std::string*> retired_list;
+thread_local vector<string*> retired_list;
 thread_local int my_hp_index = -1;
 
 int get_my_hp_index() {
@@ -105,20 +114,16 @@ int get_my_hp_index() {
                 return i;
             }
         }
-        throw std::runtime_error("No HP slots available");
+        throw runtime_error("No HP slots available");
     }
     return my_hp_index;
 }
 
-void log_transition(TransitionType type,
-                   std::chrono::high_resolution_clock::time_point start,
-                   std::chrono::high_resolution_clock::time_point end){
-
-    double duration_ms = std::chrono::duration<double>(end - start).count() * 1000.0;
+void log_transition(TransitionType type, TimePoint start, TimePoint end) {
+    double duration_ms = chrono::duration<double>(end - start).count() * 1000.0;
     auto& tm = transition_metrics[my_hp_index];
 
     switch(type) {
-
         case EIF_TRANS:
             tm.EIF_times.push_back(duration_ms);
             tm.EIF_count++;
@@ -156,8 +161,7 @@ void log_transition(TransitionType type,
     }
 }
 
-void log_spins(const int spins, const int cooldowns,
-    const double spin_time_ms, const bool success) {
+void log_spins(const int spins, const int cooldowns, const double spin_time_ms, const bool success) {
     spin_metrics[my_hp_index].spins_per_req.push_back(spins);
     spin_metrics[my_hp_index].cooldowns_per_req.push_back(cooldowns);
     spin_metrics[my_hp_index].spin_time_ms_per_req.push_back(spin_time_ms);
@@ -169,13 +173,13 @@ void log_spins(const int spins, const int cooldowns,
     }
 }
 
-size_t hash(const std::string& key) {
+size_t hash(const string& key) {
     size_t h = 0;
     for (const char c : key) h = h * 31 + c;
     return h;
 }
 
-size_t hash2(const std::string& key) {
+size_t hash2(const string& key) {
     size_t h = 5381;
     for (const char c : key) h = ((h << 5) + h) ^ c;
     return h | 1;
@@ -222,7 +226,7 @@ void freeScan() {
     }
 }
 
-void retire(std::string* ptr) {
+void retire(string* ptr) {
     if (ptr == nullptr) return;
     retired_list.push_back(ptr);
     if (retired_list.size() >= RETIRED_THRESHOLD) {
@@ -230,8 +234,8 @@ void retire(std::string* ptr) {
     }
 }
 
-std::string format_number(double num) {
-    std::ostringstream oss;
+string format_number(double num) {
+    ostringstream oss;
     oss << std::fixed;
     if (num >= 1'000'000) {
         oss << std::setprecision(2) << (num / 1'000'000.0) << "M";
@@ -247,16 +251,16 @@ std::string format_number(double num) {
     return oss.str();
 }
 
-std::string get_spin_metrics(int total_set_ops) {
-    std::vector<int> all_spins;
-    std::vector<int> all_cooldowns;
-    std::vector<double> all_spin_times;
+string get_spin_metrics(int total_set_ops) {
+    vector<int> all_spins;
+    vector<int> all_cooldowns;
+    vector<double> all_spin_times;
     uint64_t total_reqs_that_spun = 0;
     uint64_t total_successful = 0;
     uint64_t total_aborted = 0;
 
-    std::vector<double> per_thread_avg_spins;
-    std::vector<int> per_thread_max_cooldowns;
+    vector<double> per_thread_avg_spins;
+    vector<int> per_thread_max_cooldowns;
 
     for (const auto& metrics : spin_metrics) {
         all_spins.insert(all_spins.end(),
@@ -349,7 +353,7 @@ std::string get_spin_metrics(int total_set_ops) {
     int min_thread_max_cooldown = per_thread_max_cooldowns.empty() ? 0 : per_thread_max_cooldowns[0];
     int max_thread_max_cooldown = per_thread_max_cooldowns.empty() ? 0 : per_thread_max_cooldowns.back();
 
-    std::ostringstream oss;
+    ostringstream oss;
     oss << std::fixed;
 
     oss << "    Spinning:     reqs=" << format_number(total_reqs_that_spun)
@@ -403,8 +407,8 @@ std::string get_spin_metrics(int total_set_ops) {
     return oss.str();
 }
 
-std::string get_transition_metrics() {
-    std::vector<double> all_EIF, all_DIF, all_FUF, all_FXD, all_FUF_abort, all_FUF_abort_delete, all_FXD_abort;
+string get_transition_metrics() {
+    vector<double> all_EIF, all_DIF, all_FUF, all_FXD, all_FUF_abort, all_FUF_abort_delete, all_FXD_abort;
     uint64_t total_EIF = 0, total_DIF = 0, total_FUF = 0, total_FXD = 0, total_FUF_abort = 0, total_FUF_abort_delete = 0, total_FXD_abort = 0;
 
     for (const auto& tm : transition_metrics) {
@@ -425,17 +429,17 @@ std::string get_transition_metrics() {
         total_FXD_abort += tm.FXD_abort_count;
     }
 
-    std::ostringstream oss;
+    ostringstream oss;
     oss << std::fixed << std::setprecision(4);
 
-    auto format_transition = [&](const std::string& name,
-                                 const std::vector<double>& times,
-                                 uint64_t count) -> std::string {
+    auto format_transition = [&](const string& name,
+                                 const vector<double>& times,
+                                 uint64_t count) -> string {
         if (times.empty()) {
             return "    " + name + ": count=0\n";
         }
 
-        std::vector<double> sorted = times;
+        vector<double> sorted = times;
         std::sort(sorted.begin(), sorted.end());
 
         double min_t = sorted[0];
@@ -449,10 +453,10 @@ std::string get_transition_metrics() {
         double p99 = sorted[sorted.size() * 99 / 100];
         double p999 = sorted[sorted.size() * 999 / 1000];
 
-        std::ostringstream line;
+        ostringstream line;
         line << std::fixed << std::setprecision(4);
         line << "    " << name << ": "
-             << "count=" << count << " | "
+             << "count=" << format_number(count) << " | "
              << "min=" << min_t << "ms | "
              << "mean=" << mean_t << "ms | "
              << "p50=" << p50 << "ms | "
@@ -463,7 +467,7 @@ std::string get_transition_metrics() {
         return line.str();
     };
 
-    oss << "    Transitions:\n";
+    oss << "\n    Transitions:\n";
     oss << format_transition("E→I→F (insert empty)    ", all_EIF, total_EIF);
     oss << format_transition("D→I→F (insert deleted)  ", all_DIF, total_DIF);
     oss << format_transition("F→U→F (update)          ", all_FUF, total_FUF);
@@ -508,7 +512,17 @@ std::string get_transition_metrics() {
     return oss.str();
 }
 
-std::string* get(const std::string& kB) {
+void key_deleted_during_spin(bool did_spin, int spin_count, int cooldowns_hit, auto spin_start) {
+    // end spin
+    if (did_spin) {
+        auto spin_end = HRClock::now();
+        double spin_time_ms = chrono::duration<double>(spin_end - spin_start).count() * 1000.0;
+        log_spins(spin_count, cooldowns_hit, spin_time_ms, false);
+    }
+    clear_hp(K);
+}
+
+string* get(const string& kB) {
     const size_t y = hash(kB);
     const size_t step = hash2(kB);
     const size_t table_size = tb.size();
@@ -524,7 +538,7 @@ std::string* get(const std::string& kB) {
         if (Si != 'F') continue;
 
         // protect
-        std::string* ptr_ki = protect(CPKi, K);
+        string* ptr_ki = protect(CPKi, K);
         if (ptr_ki == nullptr) {
             clear_hp(K);
             continue;
@@ -537,7 +551,7 @@ std::string* get(const std::string& kB) {
         }
 
         // right key deleted
-        std::string* ptr_vi = protect(CPVi, V);
+        string* ptr_vi = protect(CPVi, V);
         if (ptr_vi == nullptr) {
             clear_hp_both();
             continue;
@@ -554,23 +568,12 @@ std::string* get(const std::string& kB) {
     return nullptr;
 }
 
-void key_deleted_during_spin(bool did_spin, int spin_count, int cooldowns_hit,
-    std::chrono::high_resolution_clock::time_point spin_start) {
-    // end spin
-    if (did_spin) {
-        auto spin_end = std::chrono::high_resolution_clock::now();
-        double spin_time_ms = std::chrono::duration<double>(spin_end - spin_start).count() * 1000.0;
-        log_spins(spin_count, cooldowns_hit, spin_time_ms, false);
-    }
-    clear_hp(K);
-}
-
-void set(const std::string& kA, const std::string& vA) {
+void set(const string& kA, const string& vA) {
     const size_t y = hash(kA);
     const size_t step = hash2(kA);
     const size_t table_size = tb.size();
-    std::string* ptr_kA = nullptr;
-    std::string* ptr_vA = nullptr;
+    string* ptr_kA = nullptr;
+    string* ptr_vA = nullptr;
 
     for (size_t j = 0; j < table_size; j++) {
         const size_t i = (y + j * step) % table_size;
@@ -583,15 +586,15 @@ void set(const std::string& kA, const std::string& vA) {
         if (Si == 'E') {
             char expected = 'E';
             if (CPSi.compare_exchange_strong(expected, 'I', acq_rel, relaxed)) {
-                auto trans_start = std::chrono::high_resolution_clock::now();
+                auto trans_start = HRClock::now();
 
-                ptr_kA = new std::string(kA);
-                ptr_vA = new std::string(vA);
+                ptr_kA = new string(kA);
+                ptr_vA = new string(vA);
                 CPKi.store(ptr_kA, relaxed);
                 CPVi.store(ptr_vA, relaxed);
                 CPSi.store('F', release);
 
-                auto trans_end = std::chrono::high_resolution_clock::now();
+                auto trans_end = HRClock::now();
                 log_transition(EIF_TRANS, trans_start, trans_end);
                 return;
             }
@@ -602,17 +605,17 @@ void set(const std::string& kA, const std::string& vA) {
         if (Si == 'D') {
             char expected = 'D';
             if (CPSi.compare_exchange_strong(expected, 'I', acq_rel, relaxed)) {
-                auto trans_start = std::chrono::high_resolution_clock::now();
+                auto trans_start = HRClock::now();
 
-                ptr_kA = new std::string(kA);
-                ptr_vA = new std::string(vA);
-                std::string* old_k = CPKi.exchange(ptr_kA, acq_rel);
-                std::string* old_v = CPVi.exchange(ptr_vA, acq_rel);
+                ptr_kA = new string(kA);
+                ptr_vA = new string(vA);
+                string* old_k = CPKi.exchange(ptr_kA, acq_rel);
+                string* old_v = CPVi.exchange(ptr_vA, acq_rel);
                 CPSi.store('F', release);
                 retire(old_k);
                 retire(old_v);
 
-                auto trans_end = std::chrono::high_resolution_clock::now();
+                auto trans_end = HRClock::now();
                 log_transition(DIF_TRANS, trans_start, trans_end);
                 return;
             }
@@ -622,7 +625,7 @@ void set(const std::string& kA, const std::string& vA) {
         if (Si != 'F') continue;
 
         // protect
-        std::string* ptr_ki = protect(CPKi, K);
+        string* ptr_ki = protect(CPKi, K);
         if (ptr_ki == nullptr) {
             clear_hp(K);
             continue;
@@ -643,7 +646,7 @@ void set(const std::string& kA, const std::string& vA) {
         int spin_count = 0;
         int cooldowns_hit = 0;
         bool did_spin = false;
-        std::chrono::high_resolution_clock::time_point spin_start;
+        TimePoint spin_start;
 
         char updated_Si = CPSi.load(acquire);
 
@@ -655,7 +658,7 @@ void set(const std::string& kA, const std::string& vA) {
 
                 // start timer
                 if (!did_spin) {
-                    spin_start = std::chrono::high_resolution_clock::now();
+                    spin_start = HRClock::now();
                     did_spin = true;
                 }
 
@@ -674,7 +677,7 @@ void set(const std::string& kA, const std::string& vA) {
                     else if     (cooldowns_hit <= 90)         sleep_ms = 50;
                     else if     (cooldowns_hit <= 100)       sleep_ms = 60;
                     else                                                    sleep_ms = 60;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+                    std::this_thread::sleep_for(chrono::milliseconds(sleep_ms));
                 }
 
                 updated_Si = CPSi.load(acquire);
@@ -687,22 +690,23 @@ void set(const std::string& kA, const std::string& vA) {
                 break;
             }
 
-            // send cas - start of FUF
+            // send cas - FUF start
             if (CPSi.compare_exchange_strong(updated_Si, 'U', acq_rel, relaxed)) {
-                auto trans_start = std::chrono::high_resolution_clock::now();
+                auto trans_start = HRClock::now();
 
                 // key deleted/swapped ; probe (ABORT CASE)
                 if (ptr_ki != CPKi.load(acquire)) {
-                    auto trans_end = std::chrono::high_resolution_clock::now();
+                    auto trans_end = HRClock::now();
+                    string* current_ki = CPKi.load(acquire);
 
-                    // Check what happened to the key pointer
-                    std::string* current_ki = CPKi.load(acquire);
+                    // key was deleted
                     if (current_ki == nullptr) {
-                        // Key was deleted by another thread → U to D
                         CPSi.store('D', release);
                         log_transition(FUF_ABORT_DELETE_TRANS, trans_start, trans_end);
-                    } else {
-                        // Key was swapped by another thread → U to F
+                    }
+
+                    // key was swapped
+                    else {
                         CPSi.store('F', release);
                         log_transition(FUF_ABORT_TRANS, trans_start, trans_end);
                     }
@@ -711,20 +715,20 @@ void set(const std::string& kA, const std::string& vA) {
                     break;
                 }
 
-                // cas approved - end FUF
-                ptr_vA = new std::string(vA);
-                std::string *old_ptr_vi = CPVi.exchange(ptr_vA, acq_rel);
+                // cas approved ~ FUF end
+                ptr_vA = new string(vA);
+                string *old_ptr_vi = CPVi.exchange(ptr_vA, acq_rel);
                 CPSi.store('F', release);
                 clear_hp(K);
                 retire(old_ptr_vi);
 
-                auto trans_end = std::chrono::high_resolution_clock::now();
+                auto trans_end = HRClock::now();
                 log_transition(FUF_TRANS, trans_start, trans_end);
 
                 // end spin
                 if (did_spin) {
-                    auto spin_end = std::chrono::high_resolution_clock::now();
-                    double spin_time_ms = std::chrono::duration<double>(spin_end - spin_start).count() * 1000.0;
+                    auto spin_end = HRClock::now();
+                    double spin_time_ms = chrono::duration<double>(spin_end - spin_start).count() * 1000.0;
                     log_spins(spin_count, cooldowns_hit, spin_time_ms, true);
                 }
                 return;
@@ -735,7 +739,7 @@ void set(const std::string& kA, const std::string& vA) {
     }
 }
 
-void del(const std::string& kx) {
+void del(const string& kx) {
     const size_t y = hash(kx);
     const size_t step = hash2(kx);
     const size_t table_size = tb.size();
@@ -750,7 +754,7 @@ void del(const std::string& kx) {
         if (Si == 'E') return;
         if (Si != 'F') continue;
 
-        std::string* ptr_ki = protect(CPKi, K);
+        string* ptr_ki = protect(CPKi, K);
 
         // key deleted/swap
         if (ptr_ki == nullptr) {
@@ -773,25 +777,25 @@ void del(const std::string& kx) {
         char expected = 'F';
         if (CPSi.compare_exchange_strong(expected, 'X', acq_rel, relaxed)) {
 
-            auto trans_start = std::chrono::high_resolution_clock::now();
+            auto trans_start = HRClock::now();
 
             // key deleted / swapped
             if (ptr_ki != CPKi.load(acquire)) {
                 CPSi.store('D', release); // FXD abort (job already done)
                 clear_hp(K);
-                auto trans_end = std::chrono::high_resolution_clock::now();
+                auto trans_end = HRClock::now();
                 log_transition(FXD_ABORT_TRANS, trans_start, trans_end);
                 return;
             }
 
-            std::string* ptr_k = CPKi.exchange(nullptr, acq_rel);
-            std::string* ptr_v = CPVi.exchange(nullptr, acq_rel);
+            string* ptr_k = CPKi.exchange(nullptr, acq_rel);
+            string* ptr_v = CPVi.exchange(nullptr, acq_rel);
             CPSi.store('D', release);
             clear_hp_both();
             retire(ptr_k);
             retire(ptr_v);
 
-            auto trans_end = std::chrono::high_resolution_clock::now();
+            auto trans_end = HRClock::now();
             log_transition(FXD_TRANS, trans_start, trans_end);
             return;
         }
