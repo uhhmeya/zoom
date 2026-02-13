@@ -72,6 +72,7 @@ string* get(const string& kB) {
 }
 
 void set(const string& kA, const string& vA) {
+    restart:
     const size_t y = hash(kA);
     const size_t step = hash2(kA);
     const size_t table_size = tb.size();
@@ -122,7 +123,8 @@ void set(const string& kA, const string& vA) {
                 log_transition(DIF_TRANS, trans_start, trans_end);
                 return;
             }
-            continue;
+            // lost cas ; other thread may have inserted our key
+            goto restart;
         }
 
         if (Si != 'F') continue;
@@ -167,7 +169,7 @@ void set(const string& kA, const string& vA) {
 
                 if (updated_Si == 'D' ) {
                     key_deleted_during_spin(did_spin, spin_count, cooldowns_hit, spin_start);
-                    break;
+                    goto restart;  // Key deleted during spin - restart
                 }
 
                 // cooldown
@@ -190,7 +192,7 @@ void set(const string& kA, const string& vA) {
             // key deleted/swapped ; probe
             if (ptr_ki != CPKi.load(acquire)) {
                 key_deleted_during_spin(did_spin, spin_count, cooldowns_hit, spin_start);
-                break;
+                goto restart;  // Key swapped during spin - restart
             }
 
             // send cas - FUF start
@@ -215,7 +217,7 @@ void set(const string& kA, const string& vA) {
                     }
 
                     key_deleted_during_spin(did_spin, spin_count, cooldowns_hit, spin_start);
-                    break;
+                    goto restart;
                 }
 
                 // cas approved ~ FUF end
