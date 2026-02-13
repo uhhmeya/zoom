@@ -240,6 +240,8 @@ void set(const string& kA, const string& vA) {
         }
         // key deleted : probe!
     }
+
+    throw std::runtime_error("Hash table full! Probed all " + std::to_string(table_size) + " slots.");
 }
 
 void del(const string& kx) {
