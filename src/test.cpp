@@ -77,7 +77,7 @@ void worker(const int num_requests, const double rate_per_second) {
 
 
 void run_test(const int rate, const double duration, const int num_threads) {
-    std::cout << rate / 1'000'000 << "M r/s for " << duration << "s :\n";
+    std::cout << rate / 1'000'000 << "M r/s for " << duration << "s :\n\n";
 
     const int total_reqs = static_cast<int>(rate * duration);
     const int base_reqs = total_reqs / num_threads;
@@ -115,8 +115,8 @@ int main() {
 
     for (const int num_threads : thread_counts) {
         std::cout << "" << num_threads << " threads...\n\n";
-        for (int rate = 400'000'000; rate <= 500'000'000; rate += 999'000'000) {
-            run_test(rate, 0.3, num_threads);
+        for (int rate = 900'000'000; rate <= 999'000'000; rate += 999'000'000) {
+            run_test(rate, 0.2, num_threads);
             int sleep = 10 + (rate / 10'000'000);
             std::this_thread::sleep_for(std::chrono::seconds(sleep));
         }

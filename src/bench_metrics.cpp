@@ -2,7 +2,6 @@
 #include <mutex>
 #include <thread>
 #include <chrono>
-#include <algorithm>
 #include <string>
 #include <sstream>
 #include <unistd.h>
@@ -110,7 +109,7 @@ std::string get_metrics() {
     oss << "    Throughput:   requests=" << _total.load() << " | duration=" << dur << "s | rate=" << (_total.load()/dur/1'000'000.0) << "M req/s\n";
     oss << std::setprecision(1);
     oss << "    Concurrency:  peak=" << peak << " | min=" << minC << " | mean=" << meanC << " | p50=" << p50C << " | p95=" << p95C << " | p99=" << p99C << " | contention=" << conten << "%\n";
-    oss << "    Operations:   sets=" << _set_total.load() << " | total=" << _total.load() << "\n";
+    oss << "    Operations:   sets=" << _set_total.load() << " | total=" << _total.load() << "\n\n";
     oss << get_spin_metrics(_set_total.load());
     oss << get_transition_metrics();
 

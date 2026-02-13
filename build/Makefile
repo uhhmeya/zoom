@@ -142,53 +142,125 @@ test/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/build
 .PHONY : test/fast
 
-src/lockfree.o: src/lockfree.cpp.o
-.PHONY : src/lockfree.o
+src/bench_metrics.o: src/bench_metrics.cpp.o
+.PHONY : src/bench_metrics.o
 
 # target to build an object file
-src/lockfree.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.o
-.PHONY : src/lockfree.cpp.o
+src/bench_metrics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/bench_metrics.cpp.o
+.PHONY : src/bench_metrics.cpp.o
 
-src/lockfree.i: src/lockfree.cpp.i
-.PHONY : src/lockfree.i
+src/bench_metrics.i: src/bench_metrics.cpp.i
+.PHONY : src/bench_metrics.i
 
 # target to preprocess a source file
-src/lockfree.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.i
-.PHONY : src/lockfree.cpp.i
+src/bench_metrics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/bench_metrics.cpp.i
+.PHONY : src/bench_metrics.cpp.i
 
-src/lockfree.s: src/lockfree.cpp.s
-.PHONY : src/lockfree.s
+src/bench_metrics.s: src/bench_metrics.cpp.s
+.PHONY : src/bench_metrics.s
 
 # target to generate assembly for a file
-src/lockfree.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree.cpp.s
-.PHONY : src/lockfree.cpp.s
+src/bench_metrics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/bench_metrics.cpp.s
+.PHONY : src/bench_metrics.cpp.s
 
-src/metrics.o: src/metrics.cpp.o
-.PHONY : src/metrics.o
+src/lockfree/globals.o: src/lockfree/globals.cpp.o
+.PHONY : src/lockfree/globals.o
 
 # target to build an object file
-src/metrics.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/metrics.cpp.o
-.PHONY : src/metrics.cpp.o
+src/lockfree/globals.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/globals.cpp.o
+.PHONY : src/lockfree/globals.cpp.o
 
-src/metrics.i: src/metrics.cpp.i
-.PHONY : src/metrics.i
+src/lockfree/globals.i: src/lockfree/globals.cpp.i
+.PHONY : src/lockfree/globals.i
 
 # target to preprocess a source file
-src/metrics.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/metrics.cpp.i
-.PHONY : src/metrics.cpp.i
+src/lockfree/globals.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/globals.cpp.i
+.PHONY : src/lockfree/globals.cpp.i
 
-src/metrics.s: src/metrics.cpp.s
-.PHONY : src/metrics.s
+src/lockfree/globals.s: src/lockfree/globals.cpp.s
+.PHONY : src/lockfree/globals.s
 
 # target to generate assembly for a file
-src/metrics.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/metrics.cpp.s
-.PHONY : src/metrics.cpp.s
+src/lockfree/globals.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/globals.cpp.s
+.PHONY : src/lockfree/globals.cpp.s
+
+src/lockfree/hp.o: src/lockfree/hp.cpp.o
+.PHONY : src/lockfree/hp.o
+
+# target to build an object file
+src/lockfree/hp.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/hp.cpp.o
+.PHONY : src/lockfree/hp.cpp.o
+
+src/lockfree/hp.i: src/lockfree/hp.cpp.i
+.PHONY : src/lockfree/hp.i
+
+# target to preprocess a source file
+src/lockfree/hp.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/hp.cpp.i
+.PHONY : src/lockfree/hp.cpp.i
+
+src/lockfree/hp.s: src/lockfree/hp.cpp.s
+.PHONY : src/lockfree/hp.s
+
+# target to generate assembly for a file
+src/lockfree/hp.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/hp.cpp.s
+.PHONY : src/lockfree/hp.cpp.s
+
+src/lockfree/metrics.o: src/lockfree/metrics.cpp.o
+.PHONY : src/lockfree/metrics.o
+
+# target to build an object file
+src/lockfree/metrics.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/metrics.cpp.o
+.PHONY : src/lockfree/metrics.cpp.o
+
+src/lockfree/metrics.i: src/lockfree/metrics.cpp.i
+.PHONY : src/lockfree/metrics.i
+
+# target to preprocess a source file
+src/lockfree/metrics.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/metrics.cpp.i
+.PHONY : src/lockfree/metrics.cpp.i
+
+src/lockfree/metrics.s: src/lockfree/metrics.cpp.s
+.PHONY : src/lockfree/metrics.s
+
+# target to generate assembly for a file
+src/lockfree/metrics.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/metrics.cpp.s
+.PHONY : src/lockfree/metrics.cpp.s
+
+src/lockfree/ops.o: src/lockfree/ops.cpp.o
+.PHONY : src/lockfree/ops.o
+
+# target to build an object file
+src/lockfree/ops.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/ops.cpp.o
+.PHONY : src/lockfree/ops.cpp.o
+
+src/lockfree/ops.i: src/lockfree/ops.cpp.i
+.PHONY : src/lockfree/ops.i
+
+# target to preprocess a source file
+src/lockfree/ops.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/ops.cpp.i
+.PHONY : src/lockfree/ops.cpp.i
+
+src/lockfree/ops.s: src/lockfree/ops.cpp.s
+.PHONY : src/lockfree/ops.s
+
+# target to generate assembly for a file
+src/lockfree/ops.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/server.dir/build.make CMakeFiles/server.dir/src/lockfree/ops.cpp.s
+.PHONY : src/lockfree/ops.cpp.s
 
 src/server.o: src/server.cpp.o
 .PHONY : src/server.o
@@ -248,12 +320,21 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... server"
 	@echo "... test"
-	@echo "... src/lockfree.o"
-	@echo "... src/lockfree.i"
-	@echo "... src/lockfree.s"
-	@echo "... src/metrics.o"
-	@echo "... src/metrics.i"
-	@echo "... src/metrics.s"
+	@echo "... src/bench_metrics.o"
+	@echo "... src/bench_metrics.i"
+	@echo "... src/bench_metrics.s"
+	@echo "... src/lockfree/globals.o"
+	@echo "... src/lockfree/globals.i"
+	@echo "... src/lockfree/globals.s"
+	@echo "... src/lockfree/hp.o"
+	@echo "... src/lockfree/hp.i"
+	@echo "... src/lockfree/hp.s"
+	@echo "... src/lockfree/metrics.o"
+	@echo "... src/lockfree/metrics.i"
+	@echo "... src/lockfree/metrics.s"
+	@echo "... src/lockfree/ops.o"
+	@echo "... src/lockfree/ops.i"
+	@echo "... src/lockfree/ops.s"
 	@echo "... src/server.o"
 	@echo "... src/server.i"
 	@echo "... src/server.s"
